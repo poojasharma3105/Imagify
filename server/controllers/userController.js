@@ -76,64 +76,47 @@ const razorpayInstance = new razorpay({
 });
 
 const paymentRazorpay = async (req, res) => {
-    try{
-        const {userId, planId} = req.body;
+    try {
+        const { userId, planId } = req.body;
 
-        const userData = await userModel.findById(userId);
-
-        if(!userId || !planId) {
-            return res.json({success: false, message: "All fields are required"});
+        if (!userId || !planId) {
+            return res.json({ success: false, message: "All fields are required" });
         }
 
-        let credits, plan, amount, date
+        // Check if there's an existing pending transaction for this user and plan
+        const existingTransaction = await transactionModel.findOne({ userId, plan: planId, payment: false });
+        if (existingTransaction) {
+            return res.json({ success: false, message: "You already have a pending transaction for this plan." });
+        }
 
+        let credits, amount;
         switch (planId) {
-            case 'Basic':
-                plan = 'Basic'
-                credits = 100
-                amount = 10
-                break;
-            case 'Advanced':
-                plan = 'Advanced'
-                credits = 500
-                amount = 50
-                break;
-            case 'Business':
-                plan = 'Business'
-                credits = 5000
-                amount = 250
-                break;
-            
-            default:
-                return res.json({success: false, message: "Invalid plan"});
+            case 'Basic': credits = 100; amount = 10; break;
+            case 'Advanced': credits = 500; amount = 50; break;
+            case 'Business': credits = 5000; amount = 250; break;
+            default: return res.json({ success: false, message: "Invalid plan" });
         }
 
-        date = Date.now();
-
-        const transactionData = {
-            userId, plan, amount, credits, date
-        }
-
-        const newTransaction = await transactionModel.create(transactionData);
+        const newTransaction = await transactionModel.create({ userId, plan: planId, amount, credits });
 
         const options = {
             amount: amount * 100,
             currency: process.env.CURRENCY,
-            receipt: newTransaction._id,
-        }
+            receipt: newTransaction._id.toString(),
+        };
 
-        await razorpayInstance.orders.create(options, (error, order) => {
-            if(error){
-                console.log(error);
-                return res.json({success: false, message: error.message});
+        razorpayInstance.orders.create(options, (error, order) => {
+            if (error) {
+                return res.json({ success: false, message: error.message });
             }
-            res.json({success: true, order});
-        })
-    }catch(err){
-        console.log(err);
-        res.json({success: false, message: err.message});
+            res.json({ success: true, order });
+        });
+
+    } catch (err) {
+        res.json({ success: false, message: err.message });
     }
-}
+};
+
 
 const verifyRazorpayPayment = async (req, res) => {
     try {
